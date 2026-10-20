@@ -124,7 +124,7 @@ struct SettingsView: View {
                             .keyboardType(.numberPad)
                             .textContentType(.oneTimeCode)
                             .disabled(viewModel.isVerificationCodeSubmitting)
-                            .onChange(of: viewModel.verificationCode) { _, newValue in
+                            .onChange(of: viewModel.verificationCode) { newValue in
                                 let digits = String(newValue.filter(\.isNumber).prefix(6))
                                 if digits != newValue {
                                     viewModel.verificationCode = digits
