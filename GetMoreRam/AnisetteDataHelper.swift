@@ -345,11 +345,12 @@ final class AnisetteDataHelper
             return
         }
         
-        // Same defaults as SideStore (AnisetteKit AnisetteConstants)
+        // Apple rejects macOS client info with -80045 since 2026-10-12; use the Windows iTunes identity
+        // (SideStore/LiveContainer workaround, SideStore#1652)
         self.printOut("Using custom client_info")
                         
-        self.clientInfo = "<MacBookPro18,3> <macOS;26.6;25F84> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
-        self.userAgent = "AuthKit/1 (Macintosh; OS X 26.6) (com.apple.akd/1.0)"
+        self.clientInfo = "<PC> <Windows;6.2(0,0);9200> <com.apple.AuthKit/1 (com.apple.iTunes/12.12.4.1)>"
+        self.userAgent = "akd/1.0 CFNetwork/808.1.4"
         self.printOut("Client-Info: \(self.clientInfo!)")
         self.printOut("User-Agent: \(self.userAgent!)")
         
