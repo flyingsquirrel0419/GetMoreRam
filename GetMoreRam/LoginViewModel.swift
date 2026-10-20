@@ -22,6 +22,10 @@ class LoginViewModel: ObservableObject {
     @Published var logs = ""
     @Published var availableTeams: [Team] = []
     
+    var hasCredentials: Bool {
+        !appleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !password.isEmpty
+    }
+    
     private var verificationCodeHandler: ((String?) -> Void)?
     private var isAuthenticationCancellationRequested = false
     
@@ -51,6 +55,10 @@ class LoginViewModel: ObservableObject {
     func authenticate() async throws -> Bool {
         if isLoginInProgress {
             return false
+        }
+        
+        guard hasCredentials else {
+            throw "Please enter your Apple ID and password."
         }
         
         logs = ""

@@ -121,7 +121,15 @@ struct SettingsView: View {
                 if viewModel.needVerificationCode {
                     Section {
                         TextField("", text: $viewModel.verificationCode)
+                            .keyboardType(.numberPad)
+                            .textContentType(.oneTimeCode)
                             .disabled(viewModel.isVerificationCodeSubmitting)
+                            .onChange(of: viewModel.verificationCode) { _, newValue in
+                                let digits = String(newValue.filter(\.isNumber).prefix(6))
+                                if digits != newValue {
+                                    viewModel.verificationCode = digits
+                                }
+                            }
                     } header: {
                         Text("Verification Code")
                     }
@@ -230,7 +238,7 @@ struct SettingsView: View {
                 viewModel.verificationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
 
-        return viewModel.isLoginInProgress
+        return viewModel.isLoginInProgress || !viewModel.hasCredentials
     }
     
     func cleanUp() {
