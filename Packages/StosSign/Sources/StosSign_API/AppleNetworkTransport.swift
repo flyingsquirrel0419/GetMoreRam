@@ -102,3 +102,29 @@ public enum ServerResponseDecoder {
         return dictionary
     }
 }
+
+public enum DiagnosticLogSanitizer {
+    public static func sanitize(_ text: String, secrets: [String]) -> String {
+        var result = text
+        for secret in Set(secrets).filter({ !$0.isEmpty }).sorted(by: { $0.count > $1.count }) {
+            result = result.replacingOccurrences(of: secret, with: "[REDACTED]")
+        }
+        // Strip URL credentials, query strings and fragments from diagnostics.
+        if let pattern = try? NSRegularExpression(pattern: #"https?://[^\s<>\"]+"#) {
+            for match in pattern.matches(in: result, range: NSRange(result.startIndex..., in: result)).reversed() {
+                guard let range = Range(match.range, in: result),
+                      var url = URLComponents(string: String(result[range])) else { continue }
+                url.user = nil
+                url.password = nil
+                url.query = nil
+                url.fragment = nil
+                result.replaceSubrange(range, with: url.string ?? "[URL]")
+            }
+        }
+        if let emails = try? NSRegularExpression(pattern: #"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}"#, options: .caseInsensitive) {
+            result = emails.stringByReplacingMatches(in: result,
+                range: NSRange(result.startIndex..., in: result), withTemplate: "[EMAIL]")
+        }
+        return result
+    }
+}

@@ -107,6 +107,16 @@ struct TransportTests {
         assert(account.appleID == "test@example.com")
         assert(account.identifier == 12345)
         assert(account.firstName == "Test" && account.lastName == "Account")
+        let diagnostic = "user@example.com passwordValue https://user:pass@example.com/path?token=private#fragment"
+        let sanitized = DiagnosticLogSanitizer.sanitize(diagnostic, secrets: ["passwordValue", ""])
+        assert(!sanitized.contains("user@example.com"))
+        assert(!sanitized.contains("passwordValue"))
+        assert(!sanitized.contains("private"))
+        assert(!sanitized.contains("user:pass"))
+        assert(!sanitized.contains("fragment"))
+        assert(sanitized.contains("https://example.com/path"))
+        assert(DiagnosticLogSanitizer.sanitize("HTTP 503 gsa.apple.com/grandslam/GsService2", secrets: [])
+               == "HTTP 503 gsa.apple.com/grandslam/GsService2")
         try testResponseDecoding()
         print("Network transport and response decoding regression checks passed")
     }

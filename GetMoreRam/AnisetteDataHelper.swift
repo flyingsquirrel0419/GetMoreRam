@@ -152,8 +152,6 @@ final class AnisetteDataHelper
                 self.printOut("Implementation-Version: \(version)")
             } else { self.printOut("No Implementation-Version header") }
             
-            self.printOut("Anisette used: \(formattedJSON)")
-            self.printOut("Original JSON: \(json)")
             do {
                 let jsonData = try JSONEncoder().encode(formattedJSON)
                 let anisette = try JSONDecoder().decode(AnisetteData.self, from: jsonData)
@@ -199,7 +197,7 @@ final class AnisetteDataHelper
             self.printOut("Starting a provisioning session")
             return try await self.startProvisioningSession()
         } else {
-            self.printOut("Apple didn't give valid URLs! Got response: \(String(data: data, encoding: .utf8) ?? "not utf8")")
+            self.printOut("Apple did not return valid URLs")
             throw "Apple didn't give valid URLs. Please try again later"
         }
 
@@ -310,7 +308,7 @@ final class AnisetteDataHelper
            let spim = plist["Response"]?["spim"] as? String {
             return spim
         } else {
-            self.printOut("Apple didn't give valid start provisioning data! Got response: \(String(data: data, encoding: .utf8) ?? "not utf8")")
+            self.printOut("Apple did not return valid start provisioning data")
             throw "Apple didn't give valid start provisioning data. Please try again later"
         }
     }
@@ -333,7 +331,7 @@ final class AnisetteDataHelper
            let tk = plist["Response"]?["tk"] as? String {
             return ["ptm": ptm, "tk": tk]
         } else {
-            self.printOut("Apple didn't give valid end provisioning data! Got response: \(String(data: data, encoding: .utf8) ?? "not utf8")")
+            self.printOut("Apple did not return valid end provisioning data")
             throw "Apple didn't give valid end provisioning data. Please try again later"
         }
     }
@@ -411,10 +409,8 @@ final class AnisetteDataHelper
         
         let decoded = Data(base64Encoded: Keychain.shared.identifier!)!
         self.mdLu = decoded.sha256().hexEncodedString()
-        self.printOut("X-Apple-I-MD-LU: \(self.mdLu!)")
         let uuid: UUID = decoded.object()
         self.deviceId = uuid.uuidString.uppercased()
-        self.printOut("X-Mme-Device-Id: \(self.deviceId!)")
 
         // Client info on Anisette Servers are out of date for latest GSA
         /*
@@ -449,10 +445,8 @@ final class AnisetteDataHelper
                         
                         let decoded = Data(base64Encoded: Keychain.shared.identifier!)!
                         self.mdLu = decoded.sha256().hexEncodedString()
-                        self.printOut("X-Apple-I-MD-LU: \(self.mdLu!)")
                         let uuid: UUID = decoded.object()
                         self.deviceId = uuid.uuidString.uppercased()
-                        self.printOut("X-Mme-Device-Id: \(self.deviceId!)")
                         
                         return
                     } else { throw "v1 server is not supported" }

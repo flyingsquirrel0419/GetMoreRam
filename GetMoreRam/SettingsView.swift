@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 import StosSign_API
 import StosSign_Auth
@@ -18,6 +19,7 @@ struct SettingsView: View {
     @StateObject var viewModel : LoginViewModel
     @EnvironmentObject private var sharedModel : SharedModel
     
+    @State private var logsShow = false
     @State private var errorShow = false
     @State private var errorInfo = ""
     @State private var importResultShow = false
@@ -66,6 +68,16 @@ struct SettingsView: View {
                 }
             }
             
+            Section("Diagnostics") {
+                Button("View Logs") { logsShow = true }
+                ShareLink(item: viewModel.logExportText) {
+                    Label("Share Logs", systemImage: "square.and.arrow.up")
+                }
+                .disabled(viewModel.logs.isEmpty)
+                Button("Clear Logs", role: .destructive) { viewModel.clearLogs() }
+                    .disabled(viewModel.logs.isEmpty)
+            }
+
             Section {
                 Button("Clean Up Keychain") {
                     cleanUp()
@@ -98,6 +110,9 @@ struct SettingsView: View {
             viewModel.cancelAuthentication()
         }) {
             loginModal
+        }
+        .sheet(isPresented: $logsShow) {
+            NavigationView { DiagnosticLogsView(viewModel: viewModel) }
         }
         .sheet(isPresented: $viewModel.teamSelectionShow) {
             teamSelectionView
@@ -146,8 +161,13 @@ struct SettingsView: View {
                 }
                 
                 Section {
-                    Text(viewModel.logs)
+                    Text(viewModel.logs.isEmpty ? "No logs yet." : viewModel.logs)
                         .font(.system(.subheadline, design: .monospaced))
+                        .lineLimit(6)
+                        .textSelection(.enabled)
+                    NavigationLink("View, Share or Clear Logs") {
+                        DiagnosticLogsView(viewModel: viewModel)
+                    }
                 } header: {
                     Text("Debugging")
                 }
@@ -328,4 +348,49 @@ struct SettingsView: View {
         }
     }
     
+}
+
+
+private struct DiagnosticLogsView: View {
+    @ObservedObject var viewModel: LoginViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var copied = false
+
+    var body: some View {
+        ScrollView {
+            Text(viewModel.logs.isEmpty ? "No logs yet." : viewModel.logs)
+                .font(.system(.footnote, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+        }
+        .navigationTitle("Logs")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") { dismiss() }
+            }
+            ToolbarItemGroup(placement: .bottomBar) {
+                ShareLink(item: viewModel.logExportText) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+                .disabled(viewModel.logs.isEmpty)
+                Spacer()
+                Button {
+                    UIPasteboard.general.string = viewModel.logExportText
+                    copied = true
+                } label: {
+                    Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                }
+                .disabled(viewModel.logs.isEmpty)
+                Spacer()
+                Button("Clear", role: .destructive) {
+                    viewModel.clearLogs()
+                    copied = false
+                }
+                .disabled(viewModel.logs.isEmpty)
+            }
+        }
+        .onChange(of: viewModel.logs) { _ in copied = false }
+    }
 }

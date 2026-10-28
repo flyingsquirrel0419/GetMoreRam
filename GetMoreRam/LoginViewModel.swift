@@ -5,6 +5,7 @@
 //  Created by s s on 2025/3/15.
 //
 import SwiftUI
+import UIKit
 import StosSign_API
 import StosSign_Auth
 import StosSign_Common
@@ -19,9 +20,32 @@ class LoginViewModel: ObservableObject {
     @Published var teamSelectionShow = false
     @Published var isLoginInProgress = false
     @Published private(set) var isVerificationCodeSubmitting = false
-    @Published var logs = ""
+    @Published private(set) var logs = ""
     @Published var availableTeams: [Team] = []
     
+    var logExportText: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
+        return "GetMoreRam \(version) (\(build))\niOS \(UIDevice.current.systemVersion)\nExported: \(Date().ISO8601Format())\n\n\(logs)"
+    }
+
+    func clearLogs() {
+        logs = ""
+    }
+
+    func appendLog(_ text: String) {
+        let helper = AnisetteDataHelper.shared
+        let safeText = DiagnosticLogSanitizer.sanitize(text, secrets: [
+            appleID, password, verificationCode,
+            Keychain.shared.appleIDEmailAddress ?? "", Keychain.shared.appleIDPassword ?? "",
+            Keychain.shared.identifier ?? "", Keychain.shared.adiPb ?? "",
+            helper.mdLu ?? "", helper.deviceId ?? ""
+        ])
+        logs.append("[\(Date().ISO8601Format())] \(safeText)\n")
+        // Keep diagnostics bounded during repeated login attempts.
+        if logs.count > 100_000 { logs = String(logs.suffix(100_000)) }
+    }
+
     var hasCredentials: Bool {
         !appleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !password.isEmpty
     }
@@ -61,19 +85,20 @@ class LoginViewModel: ObservableObject {
             throw "Please enter your Apple ID and password."
         }
         
-        logs = ""
+        appendLog("Starting sign-in")
         isLoginInProgress = true
         isAuthenticationCancellationRequested = false
         
         func logging(text: String) {
             Task { @MainActor [weak self] in
-                self?.logs.append("\(text)\n")
+                self?.appendLog(text)
             }
         }
         
         AnisetteDataHelper.shared.loggingFunc = logging
 
         defer {
+            AnisetteDataHelper.shared.loggingFunc = nil
             verificationCodeHandler = nil
             appleID = ""
             password = ""
@@ -86,9 +111,11 @@ class LoginViewModel: ObservableObject {
 
         var stage = "Fetching Anisette data"
         do {
+            appendLog(stage)
             let anisetteData = try await AnisetteDataHelper.shared.getAnisetteData()
 
             stage = "Apple sign-in"
+            appendLog(stage)
             let (account, session) = try await AppleAPI.shared.authenticate(appleID: appleID, password: password, anisetteData: anisetteData) { [weak self] completionHandler in
                 guard let self else {
                     completionHandler(nil)
@@ -110,6 +137,7 @@ class LoginViewModel: ObservableObject {
             Keychain.shared.appleIDPassword = password
 
             stage = "Fetching Apple developer teams"
+            appendLog(stage)
             let teams = try await fetchTeams(for: account, session: session)
             logging(text: "Successfully fetched teams")
             availableTeams = teams
@@ -117,8 +145,10 @@ class LoginViewModel: ObservableObject {
             return true
         } catch {
             if isAuthenticationCancellationRequested {
+                appendLog("Sign-in cancelled")
                 throw CancellationError()
             }
+            appendLog("\(stage) failed\n\(error.detailedDescription)")
             let original = error as NSError
             throw NSError(domain: original.domain, code: original.code, userInfo: [
                 NSLocalizedDescriptionKey: "\(stage)\n\(original.localizedDescription)",
@@ -133,6 +163,7 @@ class LoginViewModel: ObservableObject {
             return
         }
 
+        appendLog("Waiting for verification code")
         verificationCodeHandler = handler
         verificationCode = ""
         needVerificationCode = true
