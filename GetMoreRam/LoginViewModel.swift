@@ -143,6 +143,7 @@ class LoginViewModel: ObservableObject {
                 anisetteData = try await AnisetteDataHelper.shared.getAnisetteData()
             }
 
+            guard !isAuthenticationCancellationRequested else { throw CancellationError() }
             stage = "Apple sign-in"
             appendLog(stage)
             let (account, session) = try await AppleNetworkTransport.$diagnosticHandler.withValue({ [weak self] message in
