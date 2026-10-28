@@ -84,9 +84,11 @@ class LoginViewModel: ObservableObject {
             isAuthenticationCancellationRequested = false
         }
 
+        var stage = "Fetching Anisette data"
         do {
             let anisetteData = try await AnisetteDataHelper.shared.getAnisetteData()
 
+            stage = "Apple sign-in"
             let (account, session) = try await AppleAPI.shared.authenticate(appleID: appleID, password: password, anisetteData: anisetteData) { [weak self] completionHandler in
                 guard let self else {
                     completionHandler(nil)
@@ -107,6 +109,7 @@ class LoginViewModel: ObservableObject {
             Keychain.shared.appleIDEmailAddress = appleID
             Keychain.shared.appleIDPassword = password
 
+            stage = "Fetching Apple developer teams"
             let teams = try await fetchTeams(for: account, session: session)
             logging(text: "Successfully fetched teams")
             availableTeams = teams
@@ -116,8 +119,11 @@ class LoginViewModel: ObservableObject {
             if isAuthenticationCancellationRequested {
                 throw CancellationError()
             }
-            print(error)
-            throw error
+            let original = error as NSError
+            throw NSError(domain: original.domain, code: original.code, userInfo: [
+                NSLocalizedDescriptionKey: "\(stage)\n\(original.localizedDescription)",
+                NSUnderlyingErrorKey: error
+            ])
         }
     }
 

@@ -31,7 +31,7 @@ jobs:
           submodules: recursive
       - name: Test network recovery
         run: |
-          xcrun swiftc -parse-as-library Packages/StosSign/Sources/StosSign_API/AppleNetworkTransport.swift Tests/NetworkTransport/TransportTests.swift -o "$RUNNER_TEMP/network-transport-tests"
+          xcrun swiftc -parse-as-library Packages/StosSign/Sources/StosSign_API/AppleNetworkTransport.swift "Packages/StosSign/Sources/StosSign_Common/Models/Apple API/Account.swift" Tests/NetworkTransport/TransportTests.swift -o "$RUNNER_TEMP/network-transport-tests"
           "$RUNNER_TEMP/network-transport-tests"
       - name: Set Scheme
         id: scheme

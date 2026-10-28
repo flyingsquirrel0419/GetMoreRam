@@ -574,20 +574,10 @@ public final class AppleAPI: Sendable {
             request.setValue(value, forHTTPHeaderField: key)
         }
         
-        let (data, _) = try await AppleNetworkTransport.data(for: request, session: self.session)
+        let (data, response) = try await AppleNetworkTransport.data(for: request, session: self.session)
         
-        guard !data.isEmpty else {
-            return [:]
-        }
-        
-        guard let responseDictionary = try JSONSerialization.jsonObject(
-            with: data,
-            options: []
-        ) as? [String: Any] else {
-            throw AppleAPIError.badServerResponse
-        }
-        
-        return responseDictionary
+        if data.isEmpty, (response as? HTTPURLResponse)?.statusCode == 204 { return [:] }
+        return try ServerResponseDecoder.dictionary(from: data, response: response, format: .json)
     }
     
     public func sendEditRequest(requestURL: URL, body: [String: Any], session: AppleAPISession, json: Bool = false, appendClientId: Bool = true) async throws -> [String : Any] {
@@ -630,21 +620,10 @@ public final class AppleAPI: Sendable {
             request.setValue(value, forHTTPHeaderField: key)
         }
         
-        let (data, _) = try await AppleNetworkTransport.data(for: request, session: self.session)
+        let (data, response) = try await AppleNetworkTransport.data(for: request, session: self.session)
         
-        if json {
-            guard let responseDictionary = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
-                throw AppleAPIError.badServerResponse
-            }
-            
-            return responseDictionary
-        } else {
-            guard let responseDictionary = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] else {
-                throw AppleAPIError.badServerResponse
-            }
-            
-            return responseDictionary
-        }
+        return try ServerResponseDecoder.dictionary(from: data, response: response,
+                                                    format: json ? .json : .propertyList)
     }
     
     
@@ -700,13 +679,9 @@ public final class AppleAPI: Sendable {
             request.setValue(value, forHTTPHeaderField: key)
         }
         
-        let (data, _) = try await AppleNetworkTransport.data(for: request, session: self.session)
+        let (data, response) = try await AppleNetworkTransport.data(for: request, session: self.session)
         
-        guard let responseDictionary = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] else {
-            throw AppleAPIError.badServerResponse
-        }
-        
-        return responseDictionary
+        return try ServerResponseDecoder.dictionary(from: data, response: response, format: .propertyList)
     }
     
     public func fetchAccount(session: AppleAPISession) async throws -> Account {
@@ -721,13 +696,9 @@ public final class AppleAPI: Sendable {
             throw AppleAPIError.badServerResponse
         }
         
-        let jsonData = try JSONSerialization.data(withJSONObject: dictionary)
-        
-        guard let account = try? JSONDecoder().decode(Account.self, from: jsonData) else {
-            throw AppleAPIError.badServerResponse
-        }
-        
-        return account
+        // Apple returns a plist containing Date/Data fields that JSON cannot encode.
+        // Decode only the account fields and leave unrelated plist values intact.
+        return try ServerResponseDecoder.decodePropertyList(Account.self, from: dictionary)
     }
 }
 

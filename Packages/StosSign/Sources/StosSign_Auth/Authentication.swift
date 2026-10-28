@@ -127,11 +127,8 @@ public final class Authentication {
             throw AppleAPIError.authenticationHandshakeFailed
         }
         
-        guard let decryptedDictionary = try PropertyListSerialization.propertyList(
-            from: decryptedData,
-            format: nil
-        ) as? [String: Any],
-              let dsid = decryptedDictionary["adsid"] as? String,
+        let decryptedDictionary = try ServerResponseDecoder.dictionary(from: decryptedData, format: .propertyList)
+        guard let dsid = decryptedDictionary["adsid"] as? String,
               let idmsToken = decryptedDictionary["GsIdmsToken"] as? String
         else {
             throw URLError(.badServerResponse)
@@ -291,14 +288,11 @@ public final class Authentication {
         request.httpBody = bodyData
         httpHeaders.forEach { request.addValue($0.value, forHTTPHeaderField: $0.key) }
         
-        let (data, _) = try await AppleNetworkTransport.data(for: request, session: AppleAPI.shared.session,
-            retryConnectionLoss: requestParameters["o"] as? String == "init")
+        let (data, response) = try await AppleNetworkTransport.data(for: request, session: AppleAPI.shared.session,
+            retryTransientFailure: requestParameters["o"] as? String == "init")
         
-        guard let responseDictionary = try PropertyListSerialization.propertyList(
-            from: data,
-            format: nil
-        ) as? [String: Any],
-              let dictionary = responseDictionary["Response"] as? [String: Any],
+        let responseDictionary = try ServerResponseDecoder.dictionary(from: data, response: response, format: .propertyList)
+        guard let dictionary = responseDictionary["Response"] as? [String: Any],
               let status = dictionary["Status"] as? [String: Any]
         else {
             throw URLError(.badServerResponse)
@@ -395,12 +389,7 @@ public final class Authentication {
             throw AppleAPIError.authenticationHandshakeFailed
         }
         
-        guard let tokensDictionary = try PropertyListSerialization.propertyList(
-            from: token,
-            format: nil
-        ) as? [String: Any] else {
-            throw URLError(.badServerResponse)
-        }
+        let tokensDictionary = try ServerResponseDecoder.dictionary(from: token, format: .propertyList)
         
         guard let appTokens = tokensDictionary["t"] as? [String: Any],
               let tokens = appTokens[app] as? [String: Any],
@@ -453,14 +442,9 @@ public final class Authentication {
         )
         verifyRequest.allHTTPHeaderFields?["security-code"] = code
         
-        let (data, _) = try await AppleNetworkTransport.data(for: verifyRequest, session: AppleAPI.shared.session)
+        let (data, response) = try await AppleNetworkTransport.data(for: verifyRequest, session: AppleAPI.shared.session)
         
-        guard let responseDictionary = try PropertyListSerialization.propertyList(
-            from: data,
-            format: nil
-        ) as? [String: Any] else {
-            throw URLError(.badServerResponse)
-        }
+        let responseDictionary = try ServerResponseDecoder.dictionary(from: data, response: response, format: .propertyList)
         
         let errorCode = responseDictionary["ec"] as? Int ?? 0
         guard errorCode == 0 else {

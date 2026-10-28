@@ -100,7 +100,8 @@ final class AnisetteDataHelper
     func extractAnisetteData(_ data: Data, _ response: HTTPURLResponse?, v3: Bool) async throws -> AnisetteData {
         // make sure this JSON is in the format we expect
         // convert data to json
-        if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: String] {
+        let headers = try ServerResponseDecoder.dictionary(from: data, response: response, url: url?.appendingPathComponent("v3/get_headers"), format: .json)
+        if let json = headers as? [String: String] {
             if v3 {
                 if json["result"] == "GetHeadersError" {
                     let message = json["message"]
@@ -185,8 +186,8 @@ final class AnisetteDataHelper
             var request = self.buildAppleRequest(url: URL(string: "https://gsa.apple.com/grandslam/GsService2/lookup")!)
             request.httpMethod = "GET"
         let (data, response) = try await URLSession.shared.data(for: request)
-        if
-           let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? Dictionary<String, Dictionary<String, Any>>,
+        let payload = try ServerResponseDecoder.dictionary(from: data, response: response, format: .propertyList)
+        if let plist = payload as? Dictionary<String, Dictionary<String, Any>>,
            let startProvisioningString = plist["urls"]?["midStartProvisioning"] as? String,
            let startProvisioningURL = URL(string: startProvisioningString),
            let endProvisioningString = plist["urls"]?["midFinishProvisioning"] as? String,
@@ -242,9 +243,11 @@ final class AnisetteDataHelper
     
     private func handleProvisioningMessage(_ string: String, socket: URLSessionWebSocketTask) async throws -> Bool {
         guard let data = string.data(using: .utf8),
-              let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
-            throw "The server didn't give valid JSON"
+              !data.isEmpty else {
+            throw "The Anisette provisioning server sent an empty message."
         }
+        let json = try ServerResponseDecoder.dictionary(from: data,
+            url: url?.appendingPathComponent("v3/provisioning_session"), format: .json)
         
         guard let result = json["result"] as? String else {
             self.printOut("The server didn't give us a result")
@@ -301,8 +304,9 @@ final class AnisetteDataHelper
         request.httpMethod = "POST"
         request.httpBody = try PropertyListSerialization.data(fromPropertyList: body, format: .xml, options: 0)
         
-        let (data, _) = try await URLSession.shared.data(for: request)
-        if let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? Dictionary<String, Dictionary<String, Any>>,
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let payload = try ServerResponseDecoder.dictionary(from: data, response: response, format: .propertyList)
+        if let plist = payload as? Dictionary<String, Dictionary<String, Any>>,
            let spim = plist["Response"]?["spim"] as? String {
             return spim
         } else {
@@ -322,8 +326,9 @@ final class AnisetteDataHelper
         request.httpMethod = "POST"
         request.httpBody = try PropertyListSerialization.data(fromPropertyList: body, format: .xml, options: 0)
         
-        let (data, _) = try await URLSession.shared.data(for: request)
-        if let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? Dictionary<String, Dictionary<String, Any>>,
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let payload = try ServerResponseDecoder.dictionary(from: data, response: response, format: .propertyList)
+        if let plist = payload as? Dictionary<String, Dictionary<String, Any>>,
            let ptm = plist["Response"]?["ptm"] as? String,
            let tk = plist["Response"]?["tk"] as? String {
             return ["ptm": ptm, "tk": tk]
@@ -467,7 +472,7 @@ final class AnisetteDataHelper
             "adi_pb": adiPb
         ], options: [])
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await AppleNetworkTransport.data(for: request, session: URLSession.shared, retryTransientFailure: true)
         
         return try await self.extractAnisetteData(data, response as? HTTPURLResponse, v3: true)
 
