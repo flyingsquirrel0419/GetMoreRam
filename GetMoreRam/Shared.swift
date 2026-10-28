@@ -90,7 +90,7 @@ class SharedModel: ObservableObject {
     var team: Team?
     
     init() {
-        AnisetteDataHelper.shared.url = URL(string: anisetteServerURL)
+        AnisetteDataHelper.shared.url = URL(string: anisetteServerURL.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
 

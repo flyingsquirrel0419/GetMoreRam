@@ -41,23 +41,60 @@ final class AnisetteDataHelper
     
     func getAnisetteData(refresh: Bool = false) async throws -> AnisetteData
     {
-        
-        if url == nil {
+
+        try configureServer(DataManager.shared.model.anisetteServerURL)
+        guard let url else {
             throw "No Anisette Server Found!"
         }
-        
-        self.printOut("Anisette URL: \(self.url!.absoluteString)")
-        
-        let ans : AnisetteData
-        if let identifier = Keychain.shared.identifier,
-           let adiPb = Keychain.shared.adiPb {
-            ans = try await self.fetchAnisetteV3(identifier, adiPb)
-        } else {
-            ans = try await self.provision()
+
+        self.printOut("Anisette URL: \(url.absoluteString)")
+        do {
+            if let identifier = Keychain.shared.identifier,
+               let adiPb = Keychain.shared.adiPb {
+                return try await self.fetchAnisetteV3(identifier, adiPb)
+            }
+            return try await self.provision()
+        } catch let error as URLError {
+            let failedURL = error.userInfo[NSURLErrorFailingURLStringErrorKey] as? String
+                ?? (error.userInfo[NSURLErrorFailingURLErrorKey] as? URL)?.absoluteString
+                ?? url.absoluteString
+            throw NSError(
+                domain: NSURLErrorDomain,
+                code: error.code.rawValue,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Could not connect while fetching Anisette data.\nURL: \(failedURL)",
+                    NSLocalizedRecoverySuggestionErrorKey: "Check your internet connection and Anisette Server URL in Settings. If the Anisette server is unavailable, enter a working V3 server URL and try again. Server changes take effect immediately; restarting the app is not required.",
+                    NSUnderlyingErrorKey: error
+                ]
+            )
         }
-        return ans
+    }
+
+    private func configureServer(_ input: String) throws {
+        let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let candidate = URL(string: value),
+              let scheme = candidate.scheme?.lowercased(),
+              ["https", "http"].contains(scheme),
+              let host = candidate.host, !host.isEmpty,
+              candidate.user == nil, candidate.password == nil,
+              candidate.query == nil, candidate.fragment == nil else {
+            throw "Invalid Anisette Server URL. Enter a full HTTP or HTTPS V3 server URL in Settings."
+        }
+
+        let previousServer = UserDefaults.standard.string(forKey: "AnisetteProvisioningServer")
+            .flatMap { URL(string: $0) } ?? url
+        if candidate != previousServer {
+            // Provisioning data belongs to the server that created it.
+            Keychain.shared.adiPb = nil
+            resetClientInfo()
+            startProvisioningURL = nil
+            endProvisioningURL = nil
+        }
+        url = candidate
+        UserDefaults.standard.set(candidate.absoluteString, forKey: "AnisetteProvisioningServer")
     }
     
+
     // MARK: - COMMON
     
     func extractAnisetteData(_ data: Data, _ response: HTTPURLResponse?, v3: Bool) async throws -> AnisetteData {

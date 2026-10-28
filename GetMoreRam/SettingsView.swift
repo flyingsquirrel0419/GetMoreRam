@@ -57,7 +57,11 @@ struct SettingsView: View {
                 HStack {
                     Text("Anisette Server URL")
                     Spacer()
-                    TextField("", text: $sharedModel.anisetteServerURL)
+                    TextField("https://ani.sidestore.io", text: $sharedModel.anisetteServerURL)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                        .disabled(viewModel.isLoginInProgress)
                         .multilineTextAlignment(.trailing)
                 }
             }
