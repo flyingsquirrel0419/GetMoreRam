@@ -29,6 +29,10 @@ jobs:
         uses: actions/checkout@v3
         with:
           submodules: recursive
+      - name: Test network recovery
+        run: |
+          xcrun swiftc -parse-as-library Packages/StosSign/Sources/StosSign_API/AppleNetworkTransport.swift Tests/NetworkTransport/TransportTests.swift -o "$RUNNER_TEMP/network-transport-tests"
+          "$RUNNER_TEMP/network-transport-tests"
       - name: Set Scheme
         id: scheme
         run: |

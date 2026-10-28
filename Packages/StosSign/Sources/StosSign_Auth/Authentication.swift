@@ -277,8 +277,7 @@ public final class Authentication {
             "Content-Type": "text/x-xml-plist",
             "X-MMe-Client-Info": anisetteData.deviceDescription,
             "Accept": "*/*",
-            "User-Agent": "akd/1.0 CFNetwork/808.1.4",
-            "Connection": "close"
+            "User-Agent": "akd/1.0 CFNetwork/808.1.4"
         ]
         
         let bodyData = try PropertyListSerialization.data(
@@ -292,7 +291,8 @@ public final class Authentication {
         request.httpBody = bodyData
         httpHeaders.forEach { request.addValue($0.value, forHTTPHeaderField: $0.key) }
         
-        let (data, _) = try await AppleAPI.shared.session.data(for: request)
+        let (data, _) = try await AppleNetworkTransport.data(for: request, session: AppleAPI.shared.session,
+            retryConnectionLoss: requestParameters["o"] as? String == "init")
         
         guard let responseDictionary = try PropertyListSerialization.propertyList(
             from: data,
@@ -351,8 +351,7 @@ public final class Authentication {
             "X-MMe-Client-Info": anisetteData.deviceDescription,
             "X-Apple-I-Client-Time": dateFormatter.string(from: anisetteData.date),
             "X-Apple-Locale": anisetteData.locale.identifier,
-            "X-Apple-I-TimeZone": anisetteData.timeZone.abbreviation() ?? "PST",
-            "Connection": "close"
+            "X-Apple-I-TimeZone": anisetteData.timeZone.abbreviation() ?? "PST"
         ]
         
         var request = URLRequest(url: url)
@@ -431,7 +430,7 @@ public final class Authentication {
         )
         
         if !codeAlreadySent {
-            let _ = try? await AppleAPI.shared.session.data(for: request)
+            let _ = try await AppleNetworkTransport.data(for: request, session: AppleAPI.shared.session)
         }
         
         let verificationCode = try await withCheckedThrowingContinuation { continuation in
@@ -454,7 +453,7 @@ public final class Authentication {
         )
         verifyRequest.allHTTPHeaderFields?["security-code"] = code
         
-        let (data, _) = try await AppleAPI.shared.session.data(for: verifyRequest)
+        let (data, _) = try await AppleNetworkTransport.data(for: verifyRequest, session: AppleAPI.shared.session)
         
         guard let responseDictionary = try PropertyListSerialization.propertyList(
             from: data,
@@ -510,7 +509,7 @@ public final class Authentication {
         )
         request.httpBody = bodyData
         
-        let _ = try? await AppleAPI.shared.session.data(for: request)
+        let _ = try await AppleNetworkTransport.data(for: request, session: AppleAPI.shared.session)
         
         let verificationCode = try await withCheckedThrowingContinuation { continuation in
             Task {
@@ -547,7 +546,7 @@ public final class Authentication {
         )
         verifyRequest.httpBody = verifyBodyData
         
-        let (_, response) = try await AppleAPI.shared.session.data(for: verifyRequest)
+        let (_, response) = try await AppleNetworkTransport.data(for: verifyRequest, session: AppleAPI.shared.session)
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200,

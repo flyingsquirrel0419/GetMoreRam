@@ -574,7 +574,7 @@ public final class AppleAPI: Sendable {
             request.setValue(value, forHTTPHeaderField: key)
         }
         
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, _) = try await AppleNetworkTransport.data(for: request, session: self.session)
         
         guard !data.isEmpty else {
             return [:]
@@ -630,7 +630,7 @@ public final class AppleAPI: Sendable {
             request.setValue(value, forHTTPHeaderField: key)
         }
         
-        let (data, _) = try await self.session.data(for: request)
+        let (data, _) = try await AppleNetworkTransport.data(for: request, session: self.session)
         
         if json {
             guard let responseDictionary = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
@@ -700,7 +700,7 @@ public final class AppleAPI: Sendable {
             request.setValue(value, forHTTPHeaderField: key)
         }
         
-        let (data, _) = try await self.session.data(for: request)
+        let (data, _) = try await AppleNetworkTransport.data(for: request, session: self.session)
         
         guard let responseDictionary = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] else {
             throw AppleAPIError.badServerResponse
