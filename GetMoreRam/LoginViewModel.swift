@@ -116,13 +116,17 @@ class LoginViewModel: ObservableObject {
 
             stage = "Apple sign-in"
             appendLog(stage)
-            let (account, session) = try await AppleAPI.shared.authenticate(appleID: appleID, password: password, anisetteData: anisetteData) { [weak self] completionHandler in
-                guard let self else {
-                    completionHandler(nil)
-                    return
-                }
+            let (account, session) = try await AppleNetworkTransport.$diagnosticHandler.withValue({ [weak self] message in
+                Task { @MainActor in self?.appendLog(message) }
+            }) {
+                try await AppleAPI.shared.authenticate(appleID: appleID, password: password, anisetteData: anisetteData) { [weak self] completionHandler in
+                    guard let self else {
+                        completionHandler(nil)
+                        return
+                    }
 
-                self.prepareForVerification(using: completionHandler)
+                    self.prepareForVerification(using: completionHandler)
+                }
             }
 
             guard !isAuthenticationCancellationRequested else {

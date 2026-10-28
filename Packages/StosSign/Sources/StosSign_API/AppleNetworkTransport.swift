@@ -5,27 +5,62 @@ import FoundationNetworking
 
 /// Retries only requests explicitly known to be safe to repeat.
 public enum AppleNetworkTransport {
+    @TaskLocal public static var diagnosticHandler: (@Sendable (String) -> Void)?
+
+    /// nil means the server requested a wait longer than an interactive sign-in allows.
+    public static func retryDelay(for response: HTTPURLResponse, attempt: Int, now: Date = Date()) -> Double? {
+        let fallback = pow(2, Double(attempt + 1))
+        guard let value = response.value(forHTTPHeaderField: "Retry-After") else { return fallback }
+        let delay: Double
+        if let seconds = Double(value), seconds.isFinite, seconds >= 0 {
+            delay = seconds
+        } else {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+            guard let date = formatter.date(from: value) else { return fallback }
+            delay = max(0, date.timeIntervalSince(now))
+        }
+        return delay <= 30 ? max(fallback, delay) : nil
+    }
+
     public static func data(for request: URLRequest, session: URLSession,
-                            retryTransientFailure: Bool = false) async throws -> (Data, URLResponse) {
+                            retryTransientFailure: Bool = false,
+                            wait: @Sendable (Double) async throws -> Void = { seconds in
+                                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                            }) async throws -> (Data, URLResponse) {
         var activeSession = session
         var retrySession: URLSession?
         defer { retrySession?.finishTasksAndInvalidate() }
-        for attempt in 0...1 {
+        let endpoint = request.url.map { "\($0.host ?? "unknown")\($0.path)" } ?? "unknown"
+        for attempt in 0...2 {
             try Task.checkCancellation()
+            let delay: Double
             do {
+                diagnosticHandler?("Request \(endpoint), attempt \(attempt + 1)")
                 let result = try await activeSession.data(for: request)
-                let status = (result.1 as? HTTPURLResponse)?.statusCode ?? 0
-                if !(attempt == 0 && retryTransientFailure && [502, 503, 504].contains(status)) {
+                let http = result.1 as? HTTPURLResponse
+                diagnosticHandler?("Response \(endpoint): HTTP \(http?.statusCode ?? 0), \(result.0.count) bytes")
+                guard attempt < 2, retryTransientFailure, let http,
+                      [502, 503, 504].contains(http.statusCode),
+                      let retryDelay = retryDelay(for: http, attempt: attempt) else {
                     return result
                 }
+                delay = retryDelay
             } catch {
                 let nsError = error as NSError
+                // Connection-loss retries stay limited to one; never replay other errors.
                 guard attempt == 0, retryTransientFailure, nsError.domain == NSURLErrorDomain,
                       nsError.code == URLError.networkConnectionLost.rawValue else {
                     throw contextualError(error, request: request)
                 }
+                delay = 2
             }
-            // Only explicitly replayable requests may use a fresh connection once.
+            diagnosticHandler?("Transient failure; retrying in \(delay) seconds")
+            try await wait(delay)
+            try Task.checkCancellation()
+            retrySession?.finishTasksAndInvalidate()
             let freshSession = URLSession(configuration: session.configuration)
             retrySession = freshSession
             activeSession = freshSession
@@ -60,15 +95,18 @@ public enum ServerResponseDecoder {
     }
 
     public static func dictionary(from data: Data, response: URLResponse? = nil,
-                                  url: URL? = nil, format: Format) throws -> [String: Any] {
+                                  url: URL? = nil, operation: String? = nil, format: Format) throws -> [String: Any] {
         let http = response as? HTTPURLResponse
         let endpointURL = response?.url ?? url
         let endpoint = endpointURL.map { "\($0.host ?? "unknown")\($0.path)" } ?? "local authentication payload"
         let status = http.map { String($0.statusCode) } ?? "unavailable"
-        let metadata = "Endpoint: \(endpoint)\nHTTP: \(status)\nContent-Type: \(response?.mimeType ?? "unknown")\nBytes: \(data.count)"
+        let operationInfo = operation.map { "Operation: \($0)\n" } ?? ""
+        let metadata = operationInfo + "Endpoint: \(endpoint)\nHTTP: \(status)\nContent-Type: \(response?.mimeType ?? "unknown")\nBytes: \(data.count)"
         let suggestion: String
         if http?.statusCode == 429 {
             suggestion = "The server is rate limiting requests. Wait before trying again."
+        } else if endpointURL?.host?.hasSuffix("apple.com") == true {
+            suggestion = "Apple sign-in is temporarily unavailable or the network returned an error. Wait a few minutes, then retry. If it persists, try another network without a VPN or HTTP proxy. Changing the Anisette URL will not fix an Apple endpoint error."
         } else {
             suggestion = "Try again later or on another network. For an Anisette endpoint, check the V3 server URL in Settings."
         }

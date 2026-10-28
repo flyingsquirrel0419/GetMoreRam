@@ -6,11 +6,13 @@ final class StubProtocol: URLProtocol {
     static var failure: URLError.Code = .networkConnectionLost
     static var alwaysFail = false
     static var firstHTTPStatus: Int?
+    static var alwaysHTTPStatus: Int?
 
     static func reset(_ code: URLError.Code = .networkConnectionLost, always: Bool = false) {
         lock.lock()
         defer { lock.unlock() }
         firstHTTPStatus = nil
+        alwaysHTTPStatus = nil
         requests = 0
         failure = code
         alwaysFail = always
@@ -23,8 +25,8 @@ final class StubProtocol: URLProtocol {
         Self.requests += 1
         let fail = Self.requests == 1 || Self.alwaysFail
         let code = Self.failure
-        let httpStatus = Self.requests == 1 ? Self.firstHTTPStatus : nil
-        let useHTTP = Self.firstHTTPStatus != nil
+        let httpStatus = Self.alwaysHTTPStatus ?? (Self.requests == 1 ? Self.firstHTTPStatus : nil)
+        let useHTTP = Self.firstHTTPStatus != nil || Self.alwaysHTTPStatus != nil
         Self.lock.unlock()
         if fail && !useHTTP {
             client?.urlProtocol(self, didFailWithError: URLError(code))
@@ -96,6 +98,33 @@ struct TransportTests {
             assert((response as? HTTPURLResponse)?.statusCode == (replayable ? 200 : 503))
             assert(StubProtocol.requests == (replayable ? 2 : 1))
         }
+        StubProtocol.reset()
+        StubProtocol.alwaysHTTPStatus = 503
+        let (_, unavailable) = try await AppleNetworkTransport.data(for: request, session: session,
+            retryTransientFailure: true, wait: { delay in assert([2.0, 4.0].contains(delay)) })
+        assert((unavailable as? HTTPURLResponse)?.statusCode == 503)
+        assert(StubProtocol.requests == 3, "503 retries must be bounded to three attempts")
+        StubProtocol.reset()
+        StubProtocol.alwaysHTTPStatus = 503
+        do {
+            _ = try await AppleNetworkTransport.data(for: request, session: session,
+                retryTransientFailure: true, wait: { _ in throw CancellationError() })
+            fatalError("Cancellation during backoff must stop the request")
+        } catch is CancellationError {
+            assert(StubProtocol.requests == 1)
+        }
+        let retryURL = URL(string: "https://gsa.apple.com/test")!
+        func retryResponse(_ value: String?) -> HTTPURLResponse {
+            HTTPURLResponse(url: retryURL, statusCode: 503, httpVersion: "HTTP/1.1",
+                headerFields: value.map { ["Retry-After": $0] })!
+        }
+        assert(AppleNetworkTransport.retryDelay(for: retryResponse(nil), attempt: 0) == 2)
+        assert(AppleNetworkTransport.retryDelay(for: retryResponse(nil), attempt: 1) == 4)
+        assert(AppleNetworkTransport.retryDelay(for: retryResponse("10"), attempt: 0) == 10)
+        assert(AppleNetworkTransport.retryDelay(for: retryResponse("120"), attempt: 0) == nil)
+        assert(AppleNetworkTransport.retryDelay(for: retryResponse("invalid"), attempt: 0) == 2)
+        assert(AppleNetworkTransport.retryDelay(for: retryResponse("Thu, 01 Jan 1970 00:00:10 GMT"),
+            attempt: 0, now: Date(timeIntervalSince1970: 0)) == 10)
         let developer: [String: Any] = [
             "email": "test@example.com", "personId": 12345,
             "firstName": "Test", "lastName": "Account",

@@ -291,7 +291,9 @@ public final class Authentication {
         let (data, response) = try await AppleNetworkTransport.data(for: request, session: AppleAPI.shared.session,
             retryTransientFailure: requestParameters["o"] as? String == "init")
         
-        let responseDictionary = try ServerResponseDecoder.dictionary(from: data, response: response, format: .propertyList)
+        let operation = requestParameters["o"] as? String ?? "unknown"
+        let responseDictionary = try ServerResponseDecoder.dictionary(from: data, response: response,
+            operation: "Apple authentication \(operation)", format: .propertyList)
         guard let dictionary = responseDictionary["Response"] as? [String: Any],
               let status = dictionary["Status"] as? [String: Any]
         else {
