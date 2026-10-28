@@ -1,0 +1,60 @@
+name: Publish Stable Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable version tag
+        required: true
+        default: v1.0.0
+      commit:
+        description: Verified source commit
+        required: true
+        default: 9a1d16043a281fb9d61d64df647f267dffca0ac4
+      sha256:
+        description: SHA-256 of the verified Nightly IPA
+        required: true
+        default: 065671b08709efc380898238710e5d03786ded0b8cc1b47023990e50baed5c09
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stable-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ inputs.version }}
+      VERIFIED_COMMIT: ${{ inputs.commit }}
+      VERIFIED_SHA256: ${{ inputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify and publish tested IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$VERIFIED_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$VERIFIED_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          test -f "docs/releases/$VERSION.md"
+          gh api "repos/$GH_REPO/commits/$VERIFIED_COMMIT" --jq .sha | grep -Fx "$VERIFIED_COMMIT"
+          mkdir -p release-assets
+          gh release download nightly --pattern GetMoreRam.ipa --dir release-assets
+          printf '%s  %s\n' "$VERIFIED_SHA256" release-assets/GetMoreRam.ipa | sha256sum --check
+          unzip -t release-assets/GetMoreRam.ipa
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            test "$(gh release view "$VERSION" --json isDraft --jq .isDraft)" = true
+            gh release upload "$VERSION" release-assets/GetMoreRam.ipa --clobber
+          else
+            gh release create "$VERSION" release-assets/GetMoreRam.ipa --draft \
+              --target "$VERIFIED_COMMIT" --title "GetMoreRam $VERSION" \
+              --notes-file "docs/releases/$VERSION.md"
+          fi
+          gh release edit "$VERSION" --draft=false --prerelease=false --latest \
+            --title "GetMoreRam $VERSION" --notes-file "docs/releases/$VERSION.md"
+          gh release view "$VERSION" --json url,isDraft,isPrerelease,assets
