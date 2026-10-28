@@ -274,7 +274,7 @@ public final class Authentication {
             "Content-Type": "text/x-xml-plist",
             "X-MMe-Client-Info": anisetteData.deviceDescription,
             "Accept": "*/*",
-            "User-Agent": "akd/1.0 CFNetwork/808.1.4"
+            "User-Agent": AppleNetworkTransport.authenticationUserAgent
         ]
         
         let bodyData = try PropertyListSerialization.data(

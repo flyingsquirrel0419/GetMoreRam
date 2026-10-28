@@ -78,6 +78,12 @@ public class Keychain
     @KeychainItem(key: "identifier")
     public var identifier: String?
     
+    @KeychainItem(key: "onDeviceIdentifier")
+    public var onDeviceIdentifier: String?
+
+    @KeychainItem(key: "onDeviceAdiPb")
+    public var onDeviceAdiPb: Data?
+
     @KeychainItem(key: "adiPb")
     public var adiPb: String?
     

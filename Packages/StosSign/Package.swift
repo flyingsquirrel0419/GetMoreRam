@@ -6,8 +6,8 @@ import PackageDescription
 let package = Package(
     name: "StosSign",
     platforms: [
-        .iOS(.v14),
-        .macOS(.v11),
+        .iOS(.v15),
+        .macOS(.v12),
     ],
     products: [
         .library(
@@ -40,6 +40,8 @@ let package = Package(
         )
     ],
     dependencies: [
+        .package(url: "https://github.com/mahee96/AnisetteKit.git", revision: "db8b41022697b6c19be8a5f01a1ce834145a2a26"),
+        .package(url: "https://github.com/weichsel/ZIPFoundation.git", exact: "0.9.20"),
         .package(url: "https://github.com/apple/swift-crypto.git", "1.0.0" ..< "5.0.0"),
         .package(url: "https://github.com/adam-fowler/swift-srp.git", revision: "ce202c48f8ca68f44b71732f945eb8221d6fe135"),
         .package(url: "https://github.com/krzyzanowskim/OpenSSL", from: "3.3.3001"),
@@ -80,6 +82,8 @@ let package = Package(
         .target(
             name: "StosSign_Auth",
             dependencies: [
+                .product(name: "AnisetteKit", package: "AnisetteKit"),
+                .product(name: "ZIPFoundation", package: "ZIPFoundation"),
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "CryptoSwift", package: "CryptoSwift"),
                 .product(name: "SRP", package: "swift-srp"),

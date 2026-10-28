@@ -39,6 +39,7 @@ class LoginViewModel: ObservableObject {
             appleID, password, verificationCode,
             Keychain.shared.appleIDEmailAddress ?? "", Keychain.shared.appleIDPassword ?? "",
             Keychain.shared.identifier ?? "", Keychain.shared.adiPb ?? "",
+            Keychain.shared.onDeviceIdentifier ?? "", Keychain.shared.onDeviceAdiPb?.base64EncodedString() ?? "",
             helper.mdLu ?? "", helper.deviceId ?? ""
         ])
         logs.append("[\(Date().ISO8601Format())] \(safeText)\n")
@@ -112,20 +113,50 @@ class LoginViewModel: ObservableObject {
         var stage = "Fetching Anisette data"
         do {
             appendLog(stage)
-            let anisetteData = try await AnisetteDataHelper.shared.getAnisetteData()
+            let settings = DataManager.shared.model
+            for value in [settings.anisetteClientInfo, settings.anisetteUserAgent, settings.authenticationUserAgent] {
+                guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      !value.contains("\r"), !value.contains("\n") else {
+                    throw "Client headers must be non-empty single-line values. Check Anisette & Sign-In Headers in Settings."
+                }
+            }
+            let anisetteData: AnisetteData
+            if settings.useOnDeviceAnisette {
+                appendLog("Anisette provider: on-device (Unicorn TCI)")
+                let fingerprint = settings.anisetteClientInfo + "\n" + settings.anisetteUserAgent
+                if UserDefaults.standard.string(forKey: "OnDeviceAnisetteIdentity") != fingerprint {
+                    Keychain.shared.onDeviceAdiPb = nil
+                    try await OnDeviceAnisette.shared.reset()
+                    UserDefaults.standard.set(fingerprint, forKey: "OnDeviceAnisetteIdentity")
+                }
+                let identifier = Keychain.shared.onDeviceIdentifier.flatMap(UUID.init(uuidString:)) ?? UUID()
+                Keychain.shared.onDeviceIdentifier = identifier.uuidString
+                let (data, blob) = try await OnDeviceAnisette.shared.generate(identifier: identifier,
+                    blob: Keychain.shared.onDeviceAdiPb, clientInfo: settings.anisetteClientInfo,
+                    userAgent: settings.anisetteUserAgent, log: { [weak self] message in
+                        Task { @MainActor in self?.appendLog(message) }
+                    })
+                if let blob { Keychain.shared.onDeviceAdiPb = blob }
+                anisetteData = data
+            } else {
+                appendLog("Anisette provider: remote")
+                anisetteData = try await AnisetteDataHelper.shared.getAnisetteData()
+            }
 
             stage = "Apple sign-in"
             appendLog(stage)
             let (account, session) = try await AppleNetworkTransport.$diagnosticHandler.withValue({ [weak self] message in
                 Task { @MainActor in self?.appendLog(message) }
             }) {
-                try await AppleAPI.shared.authenticate(appleID: appleID, password: password, anisetteData: anisetteData) { [weak self] completionHandler in
-                    guard let self else {
-                        completionHandler(nil)
-                        return
-                    }
+                try await AppleNetworkTransport.$authenticationUserAgent.withValue(settings.authenticationUserAgent) {
+                    try await AppleAPI.shared.authenticate(appleID: appleID, password: password, anisetteData: anisetteData) { [weak self] completionHandler in
+                        guard let self else {
+                            completionHandler(nil)
+                            return
+                        }
 
-                    self.prepareForVerification(using: completionHandler)
+                        self.prepareForVerification(using: completionHandler)
+                    }
                 }
             }
 

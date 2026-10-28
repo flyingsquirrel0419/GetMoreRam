@@ -125,6 +125,23 @@ struct TransportTests {
         assert(AppleNetworkTransport.retryDelay(for: retryResponse("invalid"), attempt: 0) == 2)
         assert(AppleNetworkTransport.retryDelay(for: retryResponse("Thu, 01 Jan 1970 00:00:10 GMT"),
             attempt: 0, now: Date(timeIntervalSince1970: 0)) == 10)
+        let suite = "GetMoreRamTests-" + UUID().uuidString
+        let preferences = UserDefaults(suiteName: suite)!
+        defer { preferences.removePersistentDomain(forName: suite) }
+        for key in AnisetteClientDefaults.headerKeys { preferences.set("custom header", forKey: key) }
+        preferences.set("remote", forKey: "AnisetteProvisioningServer")
+        preferences.set("local identity", forKey: "OnDeviceAnisetteIdentity")
+        preferences.set(true, forKey: "UseOnDeviceAnisette")
+        AnisetteClientDefaults.resetProvisioningPreferences(keepingHeaders: true, defaults: preferences)
+        assert(preferences.string(forKey: "AnisetteProvisioningServer") == nil)
+        assert(preferences.string(forKey: "OnDeviceAnisetteIdentity") == nil)
+        assert(preferences.bool(forKey: "UseOnDeviceAnisette"))
+        for key in AnisetteClientDefaults.headerKeys {
+            assert(preferences.string(forKey: key) == "custom header", "Reset must preserve custom headers")
+        }
+        AnisetteClientDefaults.resetProvisioningPreferences(keepingHeaders: false, defaults: preferences)
+        for key in AnisetteClientDefaults.headerKeys { assert(preferences.object(forKey: key) == nil) }
+        assert(preferences.bool(forKey: "UseOnDeviceAnisette"))
         let developer: [String: Any] = [
             "email": "test@example.com", "personId": 12345,
             "firstName": "Test", "lastName": "Account",

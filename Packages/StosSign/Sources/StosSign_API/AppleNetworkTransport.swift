@@ -5,6 +5,7 @@ import FoundationNetworking
 
 /// Retries only requests explicitly known to be safe to repeat.
 public enum AppleNetworkTransport {
+    @TaskLocal public static var authenticationUserAgent = "AuthKit/1 (Macintosh; OS X 26.6) (com.apple.dt.Xcode/26.0)"
     @TaskLocal public static var diagnosticHandler: (@Sendable (String) -> Void)?
 
     /// nil means the server requested a wait longer than an interactive sign-in allows.
@@ -164,5 +165,21 @@ public enum DiagnosticLogSanitizer {
                 range: NSRange(result.startIndex..., in: result), withTemplate: "[EMAIL]")
         }
         return result
+    }
+}
+
+/// Client identity defaults shared by remote and on-device Anisette.
+public enum AnisetteClientDefaults {
+    public static let clientInfo = "<MacBookPro18,3> <macOS;26.6;25F84> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
+    public static let userAgent = "AuthKit/1 (Macintosh; OS X 26.6) (com.apple.akd/1.0)"
+    public static let authenticationUserAgent = "AuthKit/1 (Macintosh; OS X 26.6) (com.apple.dt.Xcode/26.0)"
+    public static let headerKeys = ["AnisetteClientInfo", "AnisetteUserAgent", "AppleAuthenticationUserAgent"]
+
+    public static func resetProvisioningPreferences(keepingHeaders: Bool, defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: "AnisetteProvisioningServer")
+        defaults.removeObject(forKey: "OnDeviceAnisetteIdentity")
+        if !keepingHeaders {
+            for key in headerKeys { defaults.removeObject(forKey: key) }
+        }
     }
 }

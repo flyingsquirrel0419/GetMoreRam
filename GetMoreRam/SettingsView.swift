@@ -19,6 +19,10 @@ struct SettingsView: View {
     @StateObject var viewModel : LoginViewModel
     @EnvironmentObject private var sharedModel : SharedModel
     
+    @State private var headersShow = false
+    @State private var resetAnisetteShow = false
+    @State private var keepHeaders = true
+    @State private var isResettingAnisette = false
     @State private var logsShow = false
     @State private var errorShow = false
     @State private var errorInfo = ""
@@ -56,18 +60,35 @@ struct SettingsView: View {
             }
             
             Section {
-                HStack {
-                    Text("Anisette Server URL")
-                    Spacer()
-                    TextField("https://ani.sidestore.io", text: $sharedModel.anisetteServerURL)
+                Toggle("On-Device Anisette", isOn: $sharedModel.useOnDeviceAnisette)
+                    .disabled(viewModel.isLoginInProgress)
+                if !sharedModel.useOnDeviceAnisette {
+                    Picker("Server", selection: $sharedModel.anisetteServerURL) {
+                        Text("SideStore").tag("https://ani.sidestore.io")
+                        Text("jkcoxson (macOS)").tag("https://mac-ani.jkcoxson.com")
+                        Text("jkcoxson (Windows ADI)").tag("https://ani.jkcoxson.com")
+                        Text("SideStore (Windows ADI)").tag("https://win.ani.sidestore.io")
+                        if !["https://ani.sidestore.io", "https://mac-ani.jkcoxson.com", "https://ani.jkcoxson.com", "https://win.ani.sidestore.io"].contains(sharedModel.anisetteServerURL) {
+                            Text("Custom").tag(sharedModel.anisetteServerURL)
+                        }
+                    }
+                    .disabled(viewModel.isLoginInProgress)
+                    TextField("Anisette Server URL", text: $sharedModel.anisetteServerURL)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .disableAutocorrection(true)
                         .disabled(viewModel.isLoginInProgress)
-                        .multilineTextAlignment(.trailing)
                 }
+                Button("Anisette & Sign-In Headers") { headersShow = true }
+                    .disabled(viewModel.isLoginInProgress)
+                Button("Reset adi.pb", role: .destructive) { resetAnisetteShow = true }
+                    .disabled(viewModel.isLoginInProgress || isResettingAnisette)
+            } header: {
+                Text("Anisette")
+            } footer: {
+                Text("On-device mode runs ADI locally without JIT. First use downloads the required libraries; Apple provisioning still requires internet access.")
             }
-            
+
             Section("Diagnostics") {
                 Button("View Logs") { logsShow = true }
                 ShareLink(item: viewModel.logExportText) {
@@ -110,6 +131,33 @@ struct SettingsView: View {
             viewModel.cancelAuthentication()
         }) {
             loginModal
+        }
+        .sheet(isPresented: $headersShow) {
+            NavigationView { anisetteHeadersView }
+        }
+        .sheet(isPresented: $resetAnisetteShow) {
+            NavigationView {
+                Form {
+                    Section {
+                        Toggle("Keep header customizations", isOn: $keepHeaders)
+                    } footer: {
+                        Text("Clears remote and on-device provisioning data and signs out. Your signing certificates and selected Anisette mode are preserved.")
+                    }
+                    Button("Reset & Sign Out", role: .destructive) {
+                        Task { await resetAnisette(keepingHeaders: keepHeaders) }
+                    }
+                    .disabled(isResettingAnisette)
+                    if isResettingAnisette { ProgressView() }
+                }
+                .navigationTitle("Reset adi.pb")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { resetAnisetteShow = false }
+                            .disabled(isResettingAnisette)
+                    }
+                }
+            }
+            .interactiveDismissDisabled(isResettingAnisette)
         }
         .sheet(isPresented: $logsShow) {
             NavigationView { DiagnosticLogsView(viewModel: viewModel) }
@@ -265,22 +313,85 @@ struct SettingsView: View {
         return viewModel.isLoginInProgress || !viewModel.hasCredentials
     }
     
-    func cleanUp() {
-        Keychain.shared.adiPb = nil
-        Keychain.shared.identifier = nil
-        Keychain.shared.appleIDPassword = nil
-        Keychain.shared.appleIDEmailAddress = nil
-        AnisetteDataHelper.shared.resetClientInfo()
-        sharedModel.session = nil
-        sharedModel.account = nil
-        sharedModel.team = nil
-        sharedModel.isLogin = false
-        viewModel.availableTeams = []
-        viewModel.teamSelectionShow = false
-        email = ""
-        teamId = ""
+    var anisetteHeadersView: some View {
+        Form {
+            Section("Anisette Client-Info") {
+                TextEditor(text: $sharedModel.anisetteClientInfo)
+                    .frame(minHeight: 100)
+            }
+            Section("Anisette User-Agent") {
+                TextEditor(text: $sharedModel.anisetteUserAgent)
+                    .frame(minHeight: 70)
+            }
+            Section("Apple Sign-In User-Agent") {
+                TextEditor(text: $sharedModel.authenticationUserAgent)
+                    .frame(minHeight: 70)
+            }
+            Section {
+                Button("Restore Default Headers") {
+                    sharedModel.anisetteClientInfo = AnisetteClientDefaults.clientInfo
+                    sharedModel.anisetteUserAgent = AnisetteClientDefaults.userAgent
+                    sharedModel.authenticationUserAgent = AnisetteClientDefaults.authenticationUserAgent
+                }
+            } footer: {
+                Text("Changes apply on the next sign-in. Use matching client identities for your ADI provider.")
+            }
+        }
+        .textInputAutocapitalization(.never)
+        .disableAutocorrection(true)
+        .navigationTitle("Client Headers")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { headersShow = false }
+            }
+        }
     }
-    
+
+    func cleanUp() {
+        Task { await resetAnisette(keepingHeaders: true) }
+    }
+
+    @MainActor
+    func resetAnisette(keepingHeaders: Bool) async {
+        guard !viewModel.isLoginInProgress, !isResettingAnisette else { return }
+        isResettingAnisette = true
+        defer { isResettingAnisette = false }
+        do {
+            try await OnDeviceAnisette.shared.reset()
+            Keychain.shared.adiPb = nil
+            Keychain.shared.identifier = nil
+            Keychain.shared.onDeviceAdiPb = nil
+            Keychain.shared.onDeviceIdentifier = nil
+            Keychain.shared.appleIDPassword = nil
+            Keychain.shared.appleIDEmailAddress = nil
+            AnisetteClientDefaults.resetProvisioningPreferences(keepingHeaders: keepingHeaders)
+            if !keepingHeaders {
+                sharedModel.anisetteClientInfo = AnisetteClientDefaults.clientInfo
+                sharedModel.anisetteUserAgent = AnisetteClientDefaults.userAgent
+                sharedModel.authenticationUserAgent = AnisetteClientDefaults.authenticationUserAgent
+            }
+            AnisetteDataHelper.shared.resetClientInfo()
+            sharedModel.session = nil
+            sharedModel.account = nil
+            sharedModel.team = nil
+            sharedModel.isLogin = false
+            viewModel.appleID = ""
+            viewModel.password = ""
+            viewModel.availableTeams = []
+            viewModel.teamSelectionShow = false
+            email = ""
+            teamId = ""
+            viewModel.appendLog("Reset remote and on-device adi.pb; headers \(keepingHeaders ? "preserved" : "restored to defaults"); signing certificates preserved")
+            resetAnisetteShow = false
+        } catch {
+            viewModel.appendLog("Reset adi.pb failed: \(error.detailedDescription)")
+            resetAnisetteShow = false
+            errorInfo = error.detailedDescription
+            errorShow = true
+        }
+    }
+
     func importSideStoreAccount(_ result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else {
